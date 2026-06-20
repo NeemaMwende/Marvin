@@ -1,0 +1,123 @@
+# Nexus + Technobrain full stack
+#   docker compose up -d
+#   docker compose logs -f
+#   docker compose down
+
+services:
+  # ── Database ────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: nx-postgres
+    env_file:
+      - .env.docker
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Vector store ────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: nx-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  # ── Local LLM (Ollama) ──────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: nx-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  # ── Auth (Keycloak) ─────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.7
+    container_name: nx-keycloak
+    command: start-dev --import-realm
+    env_file:
+      - .env.docker
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: ${KC_DB_URL}
+      KC_DB_USERNAME: ${KC_DB_USERNAME}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./Technobrain/keycloak/realm-export:/opt/keycloak/data/import:ro
+      - ./Technobrain/keycloak/themes/technobrain:/opt/keycloak/themes/technobrain:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Nexus agent ─────────────────────────────────────────
+  nexus:
+    build:
+      context: ./Nexus
+      dockerfile: Dockerfile
+    container_name: nx-agent
+    env_file:
+      - .env.docker
+    ports:
+      - "8000:8000"
+    environment:
+      QDRANT_HOST: ${QDRANT_HOST}
+      DATABASE_URL: ${DATABASE_URL}
+      FORM_API_URL: ${FORM_API_URL}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+    volumes:
+      - ./Nexus/data:/app/data
+      - ./Nexus/.env:/app/.env
+    depends_on:
+      qdrant:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Technobrain dashboard ───────────────────────────────
+  technobrain:
+    build:
+      context: ./Technobrain/contact-form
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_NEXUS_URL: ${NEXT_PUBLIC_NEXUS_URL}
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+    container_name: nx-dashboard
+    env_file:
+      - .env.docker
+      - ./Technobrain/contact-form/.env
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nexus:
+        condition: service_started
+      keycloak:
+        condition: service_started
+
+volumes:
+  pg_data:
+  qdrant_data:
+  ollama_data:
