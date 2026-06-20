@@ -1,0 +1,6 @@
+[submodule "Technobrain"]
+	path = Technobrain
+	url = https://github.com/NeemaMwende/Technobrain.git
+[submodule "nexus"]
+	path = nexus
+	url = https://github.com/NeemaMwende/Nexus.git
