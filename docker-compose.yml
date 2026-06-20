@@ -10,11 +10,8 @@ services:
     container_name: nx-postgres
     env_file:
       - .env.docker
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
@@ -40,7 +37,7 @@ services:
     image: ollama/ollama:latest
     container_name: nx-ollama
     ports:
-      - "11434:11434"
+      - "11435:11434"
     volumes:
       - ollama_data:/root/.ollama
     restart: unless-stopped
@@ -53,12 +50,7 @@ services:
     env_file:
       - .env.docker
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
       KC_DB: postgres
-      KC_DB_URL: ${KC_DB_URL}
-      KC_DB_USERNAME: ${KC_DB_USERNAME}
-      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
       KC_HTTP_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
     ports:
@@ -73,21 +65,19 @@ services:
   # ── Nexus agent ─────────────────────────────────────────
   nexus:
     build:
-      context: ./Nexus
+      context: ./nexus
       dockerfile: Dockerfile
     container_name: nx-agent
     env_file:
+      - ./nexus/.env
       - .env.docker
+    environment:
+      # Use the Qdrant container in Docker, not local file storage
+      QDRANT_LOCAL_PATH: ""
     ports:
       - "8000:8000"
-    environment:
-      QDRANT_HOST: ${QDRANT_HOST}
-      DATABASE_URL: ${DATABASE_URL}
-      FORM_API_URL: ${FORM_API_URL}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
     volumes:
-      - ./Nexus/data:/app/data
-      - ./Nexus/.env:/app/.env
+      - ./nexus/data:/app/data
     depends_on:
       qdrant:
         condition: service_started
@@ -101,12 +91,11 @@ services:
       context: ./Technobrain/contact-form
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_NEXUS_URL: ${NEXT_PUBLIC_NEXUS_URL}
-        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
+        NEXT_PUBLIC_NEXUS_URL: http://localhost:8000
     container_name: nx-dashboard
     env_file:
-      - .env.docker
       - ./Technobrain/contact-form/.env
+      - .env.docker
     ports:
       - "3000:3000"
     depends_on:
